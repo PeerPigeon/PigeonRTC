@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PigeonRTC Two-Window Test</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 1000px;
+      margin: 30px auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 20px;
+    }
+    .info {
+      background: #e3f2fd;
+      padding: 15px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+      border-left: 4px solid #2196F3;
+    }
+    .status {
+      padding: 15px;
+      border-radius: 4px;
+      margin: 20px 0;
+    }
+    .connected { background: #e8f5e9; border-left: 4px solid #4CAF50; }
+    .disconnected { background: #ffebee; border-left: 4px solid #f44336; }
+    .waiting { background: #fff3e0; border-left: 4px solid #ff9800; }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      margin: 5px;
+    }
+    button:hover { background-color: #45a049; }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    .clients {
+      margin: 20px 0;
+    }
+    .client-btn {
+      background-color: #2196F3;
+      margin: 5px;
+    }
+    .log {
+      margin-top: 20px;
+      padding: 15px;
+      background-color: #f5f5f5;
+      border-radius: 4px;
+      max-height: 400px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+    }
+    .log-entry {
+      margin: 5px 0;
+      padding: 5px;
+      border-left: 3px solid #2196F3;
+      padding-left: 10px;
+    }
+    .success { border-left-color: #4CAF50; color: #2e7d32; }
+    .error { border-left-color: #f44336; color: #c62828; }
+    #messageInput {
+      padding: 10px;
+      width: 300px;
+      margin: 10px 5px;
+      border: 2px solid #ddd;
+      border-radius: 4px;
+    }
+    .video-container {
+      display: flex;
+      gap: 20px;
+      margin: 20px 0;
+      flex-wrap: wrap;
+    }
+    .video-box {
+      flex: 1;
+      min-width: 300px;
+    }
+    video {
+      width: 100%;
+      max-width: 500px;
+      background: #000;
+      border-radius: 8px;
+      border: 2px solid #ddd;
+    }
+    .media-controls {
+      margin: 20px 0;
+      padding: 15px;
+      background: #f9f9f9;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🕊️ PigeonRTC Two-Window Test</h1>
+    <p class="subtitle">Open this page in TWO browser windows/tabs</p>
+
+    <div class="info">
+      <strong>Instructions for Local Tab Testing:</strong><br>
+      1. Open this page in TWO separate browser tabs<br>
+      2. <strong style="color: red;">IMPORTANT: Click "Enable Camera & Microphone" in BOTH tabs and allow microphone access</strong><br>
+      3. Wait for both to connect to the signaling server<br>
+      4. In one tab, click on the other client's ID to connect<br>
+      5. Send messages and stream audio!<br>
+      <br>
+      <em>Note: Microphone access is REQUIRED for local tab testing to work due to Chrome's network privacy features.</em>
+    </div>
+
+    <div class="media-controls">
+      <strong>⚠️ REQUIRED FOR TAB TESTING: Enable microphone first</strong><br>
+      <button id="getMediaBtn" onclick="getMedia()" style="background-color: #ff9800; font-weight: bold;">Enable Microphone (Required!)</button>
+      <button id="stopMediaBtn" onclick="stopMedia()" disabled>Stop Media</button>
+      <span id="mediaStatus"></span>
+    </div>
+
+    <div class="video-container">
+      <div class="video-box">
+        <strong>Local Video</strong>
+        <video id="localVideo" autoplay muted playsinline></video>
+      </div>
+      <div class="video-box">
+        <strong>Remote Video</strong>
+        <video id="remoteVideo" autoplay playsinline></video>
+      </div>
+    </div>
+
+    <div id="status" class="status waiting">
+      <strong>Status:</strong> <span id="statusText">Connecting to signaling server...</span><br>
+      <strong>My ID:</strong> <span id="myId">-</span>
+    </div>
+
+    <div class="clients">
+      <strong>Available Clients:</strong>
+      <div id="clientList">No other clients</div>
+    </div>
+
+    <div>
+      <input type="text" id="messageInput" placeholder="Type a message..." disabled>
+      <button id="sendBtn" onclick="sendMessage()" disabled>Send Message</button>
+      <button onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <div class="log" id="logContainer">
+      <div class="log-entry">Waiting for connection...</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { createPigeonRTC } from '../dist/index.mjs';
+
+    let rtc = null;
+    let ws = null;
+    let myId = null;
+    let peerConnection = null;
+    let dataChannel = null;
+    let connectedTo = null;
+    let localStream = null;
+
+    function log(message, type = 'info') {
+      const logContainer = document.getElementById('logContainer');
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logContainer.appendChild(entry);
+      logContainer.scrollTop = logContainer.scrollHeight;
+    }
+
+    function updateStatus(text, state = 'waiting') {
+      document.getElementById('statusText').textContent = text;
+      const statusDiv = document.getElementById('status');
+      statusDiv.className = `status ${state}`;
+    }
+
+    // Initialize PigeonRTC
+    async function init() {
+      try {
+        rtc = await createPigeonRTC();
+        log('✅ PigeonRTC initialized with ' + rtc.getAdapterName(), 'success');
+        
+        // Connect to signaling server
+        connectSignaling();
+      } catch (err) {
+        log(`❌ Error: ${err.message}`, 'error');
+        updateStatus('Initialization failed', 'disconnected');
+      }
+    }
+
+    // Get user media
+    window.getMedia = async function() {
+      log('🎤 getMedia() called...', 'info');
+      try {
+        document.getElementById('getMediaBtn').disabled = true;
+        log('Requesting camera and microphone...', 'info');
+        
+        try {
+          // Try video + audio first
+          log('Trying video + audio...', 'info');
+          localStream = await rtc.getUserMedia({ 
+            video: true, 
+            audio: true 
+          });
+          log('✅ Camera and microphone enabled', 'success');
+        } catch (videoErr) {
+          log(`⚠️ Camera failed: ${videoErr.message}. Trying audio only...`, 'info');
+          try {
+            // Fall back to audio only
+            localStream = await rtc.getUserMedia({ 
+              audio: true 
+            });
+            log('✅ Microphone enabled (no camera)', 'success');
+          } catch (audioErr) {
+            log(`❌ Audio failed: ${audioErr.message}`, 'error');
+            throw new Error('No camera or microphone available: ' + audioErr.message);
+          }
+        }
+        
+        document.getElementById('localVideo').srcObject = localStream;
+        document.getElementById('stopMediaBtn').disabled = false;
+        document.getElementById('mediaStatus').textContent = '✅ Media enabled';
+        document.getElementById('mediaStatus').style.color = 'green';
+        
+        log(`✅ localStream set with ${localStream.getTracks().length} tracks`, 'success');
+        localStream.getTracks().forEach(track => {
+          log(`  - Track: ${track.kind} (${track.label})`, 'info');
+        });
+        
+        // Add tracks to existing connection if it exists
+        if (peerConnection) {
+          localStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, localStream);
+          });
+          log('Added media tracks to existing connection', 'success');
+        }
+        
+        // Trigger client list refresh to enable connect buttons
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          // Hack: send a dummy message to trigger list update
+          setTimeout(() => {
+            const event = new MessageEvent('message', {
+              data: JSON.stringify({ type: 'clients', clients: Array.from(document.querySelectorAll('.client-btn')).map(() => myId) })
+            });
+            // Just manually refresh by re-requesting from server
+            ws.send(JSON.stringify({ type: 'get-clients' }));
+          }, 100);
+        }
+      } catch (err) {
+        log(`❌ Error getting media: ${err.message}`, 'error');
+        document.getElementById('getMediaBtn').disabled = false;
+        document.getElementById('mediaStatus').textContent = '❌ Failed to get media';
+        document.getElementById('mediaStatus').style.color = 'red';
+      }
+    };
+
+    window.stopMedia = function() {
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        document.getElementById('localVideo').srcObject = null;
+        localStream = null;
+        
+        document.getElementById('getMediaBtn').disabled = false;
+        document.getElementById('stopMediaBtn').disabled = true;
+        document.getElementById('mediaStatus').textContent = '';
+        
+        log('Media stopped', 'info');
+      }
+    };
+
+    function connectSignaling() {
+      ws = new WebSocket('ws://localhost:9090');
+      
+      ws.onopen = () => {
+        log('✅ Connected to signaling server', 'success');
+        updateStatus('Connected to signaling server', 'connected');
+      };
+      
+      ws.onmessage = async (event) => {
+        const message = JSON.parse(event.data);
+        
+        if (message.type === 'id') {
+          myId = message.id;
+          document.getElementById('myId').textContent = myId;
+          log(`My client ID: ${myId}`, 'success');
+        } else if (message.type === 'clients') {
+          updateClientList(message.clients);
+        } else if (message.type === 'offer') {
+          await handleOffer(message);
+        } else if (message.type === 'answer') {
+          await handleAnswer(message);
+        } else if (message.type === 'ice-candidate') {
+          await handleIceCandidate(message);
+        }
+      };
+      
+      ws.onerror = (err) => {
+        log('❌ Signaling server error', 'error');
+        updateStatus('Signaling server error', 'disconnected');
+      };
+      
+      ws.onclose = () => {
+        log('Disconnected from signaling server', 'error');
+        updateStatus('Disconnected', 'disconnected');
+      };
+    }
+
+    function updateClientList(clients) {
+      const others = clients.filter(id => id !== myId);
+      const listDiv = document.getElementById('clientList');
+      
+      if (others.length === 0) {
+        listDiv.innerHTML = 'No other clients (open this page in another tab!)';
+      } else {
+        listDiv.innerHTML = others.map(id => {
+          // Always enable the button now - just warn in the function instead
+          return `<button class="client-btn" onclick="window.connectToPeer(${id})">Connect to Client ${id}</button>`;
+        }).join('');
+      }
+    }
+
+    window.connectToPeer = async function(peerId) {
+      log(`Checking media... localStream: ${localStream ? 'EXISTS' : 'NULL'}`, 'info');
+      
+      if (!localStream) {
+        log('❌ Please enable camera/microphone first!', 'error');
+        alert('Please click "Enable Microphone (Required!)" before connecting');
+        return;
+      }
+      
+      try {
+        log(`Connecting to client ${peerId}...`, 'info');
+        connectedTo = peerId;
+        
+        // Create peer connection
+        peerConnection = rtc.createPeerConnection({
+          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        });
+        
+        // Add local media tracks if available
+        if (localStream) {
+          localStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, localStream);
+          });
+          log('Added local media tracks to connection', 'success');
+        }
+        
+        // Handle remote tracks
+        peerConnection.ontrack = (event) => {
+          log('✅ Received remote track: ' + event.track.kind, 'success');
+          const remoteVideo = document.getElementById('remoteVideo');
+          if (!remoteVideo.srcObject) {
+            remoteVideo.srcObject = event.streams[0];
+          }
+        };
+        
+        // Set up ICE candidate handling
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate) {
+            log('Sending ICE candidate to peer', 'info');
+            ws.send(JSON.stringify({
+              type: 'ice-candidate',
+              to: peerId,
+              candidate: event.candidate
+            }));
+          } else {
+            log('ICE gathering complete', 'info');
+          }
+        };
+        
+        peerConnection.oniceconnectionstatechange = () => {
+          log(`ICE connection state: ${peerConnection.iceConnectionState}`, 'info');
+          if (peerConnection.iceConnectionState === 'connected' || peerConnection.iceConnectionState === 'completed') {
+            log('✅ ICE connected!', 'success');
+          } else if (peerConnection.iceConnectionState === 'failed') {
+            log('❌ ICE connection failed', 'error');
+          }
+        };
+        
+        peerConnection.onconnectionstatechange = () => {
+          log(`Connection state: ${peerConnection.connectionState}`, 'info');
+          if (peerConnection.connectionState === 'connected') {
+            log('✅ Peer connection established!', 'success');
+            updateStatus(`Connected to Client ${peerId}`, 'connected');
+          } else if (peerConnection.connectionState === 'failed') {
+            log('❌ Connection failed', 'error');
+            updateStatus('Connection failed', 'disconnected');
+          }
+        };
+        
+        // Create data channel
+        dataChannel = peerConnection.createDataChannel('chat');
+        setupDataChannel(dataChannel);
+        
+        // Create and send offer
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        
+        ws.send(JSON.stringify({
+          type: 'offer',
+          to: peerId,
+          offer: offer
+        }));
+        
+        log('Sent offer to peer', 'success');
+        
+      } catch (err) {
+        log(`❌ Error connecting: ${err.message}`, 'error');
+      }
+    };
+
+    async function handleOffer(message) {
+      try {
+        log(`Received offer from client ${message.from}`, 'info');
+        connectedTo = message.from;
+        
+        // Create peer connection
+        peerConnection = rtc.createPeerConnection({
+          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        });
+        
+        // Add local media tracks if available
+        if (localStream) {
+          localStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, localStream);
+          });
+          log('Added local media tracks to connection', 'success');
+        }
+        
+        // Handle remote tracks
+        peerConnection.ontrack = (event) => {
+          log('✅ Received remote track: ' + event.track.kind, 'success');
+          const remoteVideo = document.getElementById('remoteVideo');
+          if (!remoteVideo.srcObject) {
+            remoteVideo.srcObject = event.streams[0];
+          }
+        };
+        
+        // Set up ICE candidate handling
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate) {
+            log('Sending ICE candidate to peer', 'info');
+            ws.send(JSON.stringify({
+              type: 'ice-candidate',
+              to: message.from,
+              candidate: event.candidate
+            }));
+          } else {
+            log('ICE gathering complete', 'info');
+          }
+        };
+        
+        peerConnection.oniceconnectionstatechange = () => {
+          log(`ICE connection state: ${peerConnection.iceConnectionState}`, 'info');
+          if (peerConnection.iceConnectionState === 'connected' || peerConnection.iceConnectionState === 'completed') {
+            log('✅ ICE connected!', 'success');
+          } else if (peerConnection.iceConnectionState === 'failed') {
+            log('❌ ICE connection failed', 'error');
+          }
+        };
+        
+        peerConnection.onconnectionstatechange = () => {
+          log(`Connection state: ${peerConnection.connectionState}`, 'info');
+          if (peerConnection.connectionState === 'connected') {
+            log('✅ Peer connection established!', 'success');
+            updateStatus(`Connected to Client ${message.from}`, 'connected');
+          } else if (peerConnection.connectionState === 'failed') {
+            log('❌ Connection failed', 'error');
+            updateStatus('Connection failed', 'disconnected');
+          }
+        };
+        
+        // Handle data channel
+        peerConnection.ondatachannel = (event) => {
+          dataChannel = event.channel;
+          setupDataChannel(dataChannel);
+        };
+        
+        // Set remote description and create answer
+        await peerConnection.setRemoteDescription(message.offer);
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        
+        ws.send(JSON.stringify({
+          type: 'answer',
+          to: message.from,
+          answer: answer
+        }));
+        
+        log('Sent answer to peer', 'success');
+        
+      } catch (err) {
+        log(`❌ Error handling offer: ${err.message}`, 'error');
+      }
+    }
+
+    async function handleAnswer(message) {
+      try {
+        log('Received answer from peer', 'info');
+        await peerConnection.setRemoteDescription(message.answer);
+      } catch (err) {
+        log(`❌ Error handling answer: ${err.message}`, 'error');
+      }
+    }
+
+    async function handleIceCandidate(message) {
+      try {
+        if (peerConnection && message.candidate) {
+          await peerConnection.addIceCandidate(message.candidate);
+          log('Added ICE candidate from peer', 'info');
+        }
+      } catch (err) {
+        log(`❌ Error adding ICE candidate: ${err.message}`, 'error');
+      }
+    }
+
+    function setupDataChannel(channel) {
+      channel.onopen = () => {
+        log('✅ Data channel opened!', 'success');
+        document.getElementById('messageInput').disabled = false;
+        document.getElementById('sendBtn').disabled = false;
+      };
+      
+      channel.onmessage = (event) => {
+        log(`📩 Received: ${event.data}`, 'success');
+      };
+      
+      channel.onclose = () => {
+        log('Data channel closed', 'info');
+        document.getElementById('messageInput').disabled = true;
+        document.getElementById('sendBtn').disabled = true;
+      };
+    }
+
+    window.sendMessage = function() {
+      const input = document.getElementById('messageInput');
+      const message = input.value.trim();
+      
+      if (message && dataChannel && dataChannel.readyState === 'open') {
+        dataChannel.send(message);
+        log(`📤 Sent: ${message}`, 'info');
+        input.value = '';
+      }
+    };
+
+    window.clearLog = function() {
+      document.getElementById('logContainer').innerHTML = '<div class="log-entry">Log cleared.</div>';
+    };
+
+    // Start
+    init();
+  </script>
+</body>
+</html>
