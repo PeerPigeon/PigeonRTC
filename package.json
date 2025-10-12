@@ -1,0 +1,70 @@
+{
+  "name": "pigeonrtc",
+  "version": "1.0.0",
+  "description": "Pluggable cross-browser compatible WebRTC library for PeerPigeon",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "types/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "browser": "./dist/browser.js",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.js",
+    "prebuild": "mkdir -p dist types",
+    "test": "node test/basic.test.js",
+    "lint": "eslint src/ examples/ scripts/ --ext .js",
+    "lint:fix": "eslint src/ examples/ scripts/ --ext .js --fix",
+    "prepublishOnly": "npm run lint && npm run build && npm run test"
+  },
+  "files": [
+    "dist/",
+    "types/",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PeerPigeon/PigeonRTC.git"
+  },
+  "keywords": [
+    "webrtc",
+    "p2p",
+    "peer-to-peer",
+    "cross-browser",
+    "rtc",
+    "datachannel",
+    "media-stream",
+    "adapter",
+    "pluggable"
+  ],
+  "author": "PeerPigeon",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/PeerPigeon/PigeonRTC/issues"
+  },
+  "homepage": "https://github.com/PeerPigeon/PigeonRTC#readme",
+  "peerDependencies": {
+    "@koush/wrtc": "^0.5.3"
+  },
+  "peerDependenciesMeta": {
+    "@koush/wrtc": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.8",
+    "eslint": "^8.57.1",
+    "eslint-config-standard": "^17.1.0",
+    "jest": "^29.7.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

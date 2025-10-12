@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PigeonRTC Browser Example</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 900px;
+      margin: 50px auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      margin: 5px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    .status {
+      margin-top: 20px;
+      padding: 15px;
+      background-color: #e8f5e9;
+      border-left: 4px solid #4CAF50;
+      border-radius: 4px;
+    }
+    .error {
+      background-color: #ffebee;
+      border-left-color: #f44336;
+    }
+    .log {
+      margin-top: 20px;
+      padding: 15px;
+      background-color: #f5f5f5;
+      border-radius: 4px;
+      max-height: 400px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+    }
+    .log-entry {
+      margin: 5px 0;
+      padding: 5px;
+      border-left: 3px solid #2196F3;
+      padding-left: 10px;
+    }
+    .info-section {
+      margin: 20px 0;
+      padding: 15px;
+      background-color: #e3f2fd;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🕊️ PigeonRTC Browser Example</h1>
+    <p class="subtitle">Cross-browser compatible WebRTC library demo</p>
+
+    <div class="info-section">
+      <h3>Library Info</h3>
+      <div id="libInfo">Initializing...</div>
+    </div>
+
+    <div>
+      <button id="initBtn" onclick="initializeRTC()">Initialize PigeonRTC</button>
+      <button id="createPCBtn" onclick="createPeerConnection()" disabled>Create Peer Connection</button>
+      <button id="testConnectionBtn" onclick="testConnection()" disabled>Test Local Connection</button>
+      <button id="clearBtn" onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <div id="status" class="status" style="display: none;"></div>
+
+    <div class="log" id="logContainer">
+      <div class="log-entry">Log output will appear here...</div>
+    </div>
+  </div>
+
+  <script type="module">
+    // Import PigeonRTC from the built browser bundle
+    import { createPigeonRTC } from '../dist/index.mjs';
+
+    let rtc = null;
+    let peerConnection = null;
+
+    function log(message, type = 'info') {
+      const logContainer = document.getElementById('logContainer');
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      
+      if (type === 'error') {
+        entry.style.borderLeftColor = '#f44336';
+      } else if (type === 'success') {
+        entry.style.borderLeftColor = '#4CAF50';
+      }
+      
+      logContainer.appendChild(entry);
+      logContainer.scrollTop = logContainer.scrollHeight;
+    }
+
+    function showStatus(message, isError = false) {
+      const status = document.getElementById('status');
+      status.textContent = message;
+      status.className = isError ? 'status error' : 'status';
+      status.style.display = 'block';
+    }
+
+    window.initializeRTC = async function() {
+      try {
+        log('Initializing PigeonRTC...', 'info');
+        document.getElementById('initBtn').disabled = true;
+        
+        rtc = await createPigeonRTC();
+        
+        const adapterName = rtc.getAdapterName();
+        const isSupported = rtc.isSupported();
+        
+        log(`Successfully initialized with ${adapterName}`, 'success');
+        log(`WebRTC supported: ${isSupported}`, 'info');
+        
+        document.getElementById('libInfo').innerHTML = `
+          <strong>Adapter:</strong> ${adapterName}<br>
+          <strong>Supported:</strong> ${isSupported ? '✅ Yes' : '❌ No'}<br>
+          <strong>Status:</strong> Initialized
+        `;
+        
+        if (isSupported) {
+          document.getElementById('createPCBtn').disabled = false;
+          showStatus('PigeonRTC initialized successfully!');
+        } else {
+          showStatus('WebRTC is not supported in this environment', true);
+        }
+      } catch (error) {
+        log(`Error initializing: ${error.message}`, 'error');
+        showStatus(`Error: ${error.message}`, true);
+      }
+    };
+
+    window.createPeerConnection = function() {
+      try {
+        log('Creating peer connection...', 'info');
+        
+        const config = {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+          ]
+        };
+        
+        peerConnection = rtc.createPeerConnection(config);
+        
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate) {
+            log(`ICE candidate: ${event.candidate.type}`, 'info');
+          }
+        };
+        
+        peerConnection.onconnectionstatechange = () => {
+          log(`Connection state: ${peerConnection.connectionState}`, 'info');
+        };
+        
+        peerConnection.onicegatheringstatechange = () => {
+          log(`ICE gathering state: ${peerConnection.iceGatheringState}`, 'info');
+        };
+        
+        log('Peer connection created successfully', 'success');
+        document.getElementById('testConnectionBtn').disabled = false;
+        showStatus('Peer connection created!');
+        
+      } catch (error) {
+        log(`Error creating peer connection: ${error.message}`, 'error');
+        showStatus(`Error: ${error.message}`, true);
+      }
+    };
+
+    window.testConnection = async function() {
+      try {
+        log('Testing local peer-to-peer connection...', 'info');
+        document.getElementById('testConnectionBtn').disabled = true;
+        
+        // Create a second peer connection
+        const config = {
+          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        };
+        
+        const pc1 = rtc.createPeerConnection(config);
+        const pc2 = rtc.createPeerConnection(config);
+        
+        log('Created PC1 and PC2', 'info');
+        
+        // Exchange ICE candidates
+        pc1.onicecandidate = (e) => {
+          if (e.candidate) {
+            log('PC1 → PC2: ICE candidate', 'info');
+            pc2.addIceCandidate(e.candidate);
+          }
+        };
+        
+        pc2.onicecandidate = (e) => {
+          if (e.candidate) {
+            log('PC2 → PC1: ICE candidate', 'info');
+            pc1.addIceCandidate(e.candidate);
+          }
+        };
+        
+        // Create data channel
+        const dataChannel = pc1.createDataChannel('test', { ordered: true });
+        
+        dataChannel.onopen = () => {
+          log('✅ Data channel opened!', 'success');
+          dataChannel.send('Hello from PC1!');
+          showStatus('Test connection successful! Data channel is open.');
+        };
+        
+        dataChannel.onmessage = (event) => {
+          log(`PC1 received: ${event.data}`, 'success');
+        };
+        
+        // Handle data channel on PC2
+        pc2.ondatachannel = (event) => {
+          const channel = event.channel;
+          log('PC2 received data channel', 'info');
+          
+          channel.onopen = () => {
+            log('PC2 data channel opened', 'success');
+            channel.send('Hello from PC2!');
+          };
+          
+          channel.onmessage = (event) => {
+            log(`PC2 received: ${event.data}`, 'success');
+          };
+        };
+        
+        // Create offer and answer
+        log('Creating offer...', 'info');
+        const offer = await pc1.createOffer();
+        await pc1.setLocalDescription(offer);
+        await pc2.setRemoteDescription(offer);
+        
+        log('Creating answer...', 'info');
+        const answer = await pc2.createAnswer();
+        await pc2.setLocalDescription(answer);
+        await pc1.setRemoteDescription(answer);
+        
+        log('Signaling complete, waiting for connection...', 'success');
+        
+      } catch (error) {
+        log(`Error testing connection: ${error.message}`, 'error');
+        showStatus(`Error: ${error.message}`, true);
+        document.getElementById('testConnectionBtn').disabled = false;
+      }
+    };
+
+    window.clearLog = function() {
+      document.getElementById('logContainer').innerHTML = '<div class="log-entry">Log cleared.</div>';
+    };
+
+    // Make functions available globally
+    window.createPigeonRTC = createPigeonRTC;
+  </script>
+</body>
+</html>
