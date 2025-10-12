@@ -90,18 +90,18 @@ var RTCAdapter = class {
   }
   /**
    * Get user media (if supported)
-   * @param {MediaStreamConstraints} constraints
+   * @param {MediaStreamConstraints} _constraints
    * @returns {Promise<MediaStream>}
    */
-  async getUserMedia(constraints) {
+  async getUserMedia(_constraints) {
     throw new Error("getUserMedia not supported by this adapter");
   }
   /**
    * Get display media (if supported)
-   * @param {MediaStreamConstraints} constraints
+   * @param {MediaStreamConstraints} _constraints
    * @returns {Promise<MediaStream>}
    */
-  async getDisplayMedia(constraints) {
+  async getDisplayMedia(_constraints) {
     throw new Error("getDisplayMedia not supported by this adapter");
   }
 };
@@ -226,10 +226,10 @@ var NodeRTCAdapter = class extends RTCAdapter {
   getName() {
     return "NodeRTCAdapter";
   }
-  async getUserMedia(constraints) {
+  async getUserMedia(_constraints) {
     throw new Error("getUserMedia is not supported in Node.js environment");
   }
-  async getDisplayMedia(constraints) {
+  async getDisplayMedia(_constraints) {
     throw new Error("getDisplayMedia is not supported in Node.js environment");
   }
 };
