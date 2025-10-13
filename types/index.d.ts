@@ -143,6 +143,134 @@ export declare class PigeonRTC {
    * Get the name of the current adapter
    */
   getAdapterName(): string;
+
+  /**
+   * Create a WebSocket-based signaling client
+   */
+  createSignalingClient(serverUrl: string): SignalingClient;
+
+  /**
+   * Create a managed peer connection with built-in signaling
+   */
+  createManagedPeerConnection(signalingClient: SignalingClient, config?: RTCConfiguration): PeerConnection;
+}
+
+/**
+ * WebSocket-based signaling client with EventTarget interface
+ */
+export declare class SignalingClient extends EventTarget {
+  constructor(serverUrl: string);
+  
+  /**
+   * Connect to the signaling server
+   */
+  connect(): Promise<void>;
+  
+  /**
+   * Disconnect from the signaling server
+   */
+  disconnect(): void;
+  
+  /**
+   * Send a raw message to the signaling server
+   */
+  send(message: any): void;
+  
+  /**
+   * Send an offer to a peer
+   */
+  sendOffer(peerId: string | number, offer: RTCSessionDescriptionInit): void;
+  
+  /**
+   * Send an answer to a peer
+   */
+  sendAnswer(peerId: string | number, answer: RTCSessionDescriptionInit): void;
+  
+  /**
+   * Send an ICE candidate to a peer
+   */
+  sendIceCandidate(peerId: string | number, candidate: RTCIceCandidateInit): void;
+  
+  /**
+   * Check if connected to signaling server
+   */
+  isConnected(): boolean;
+  
+  /**
+   * Get this client's ID
+   */
+  getClientId(): string | number | null;
+  
+  // Event types:
+  // - 'connected': Fired when connected to server
+  // - 'disconnected': Fired when disconnected from server
+  // - 'error': Fired on error (event.detail contains error)
+  // - 'id': Fired when client ID is assigned (event.detail.id)
+  // - 'clients': Fired when client list updates (event.detail.clients)
+  // - 'signal': Fired on incoming signaling message (event.detail contains full message)
+}
+
+/**
+ * Managed peer connection with automatic signaling integration
+ */
+export declare class PeerConnection extends EventTarget {
+  constructor(rtc: PigeonRTC, signalingClient: SignalingClient, config?: RTCConfiguration);
+  
+  /**
+   * Initiate connection to a peer (creates and sends offer)
+   */
+  connect(peerId: string | number, localStream?: MediaStream): Promise<void>;
+  
+  /**
+   * Handle incoming offer from a peer
+   */
+  handleOffer(peerId: string | number, offer: RTCSessionDescriptionInit, localStream?: MediaStream): Promise<void>;
+  
+  /**
+   * Handle incoming answer from a peer
+   */
+  handleAnswer(answer: RTCSessionDescriptionInit): Promise<void>;
+  
+  /**
+   * Handle incoming ICE candidate from a peer
+   */
+  handleIceCandidate(candidate: RTCIceCandidateInit): Promise<void>;
+  
+  /**
+   * Create a data channel
+   */
+  createDataChannel(label: string, options?: RTCDataChannelInit): RTCDataChannel;
+  
+  /**
+   * Get an existing data channel by label
+   */
+  getDataChannel(label: string): RTCDataChannel | undefined;
+  
+  /**
+   * Send data on a channel
+   */
+  send(channelLabel: string, data: string | ArrayBuffer | Blob): void;
+  
+  /**
+   * Get the underlying RTCPeerConnection
+   */
+  getRTCPeerConnection(): RTCPeerConnection;
+  
+  /**
+   * Close the peer connection
+   */
+  close(): void;
+  
+  // Event types:
+  // - 'connected': Fired when peer connection established
+  // - 'failed': Fired when peer connection fails
+  // - 'track': Fired when remote track received (event.detail.track and event.detail.streams)
+  // - 'datachannel': Fired when remote data channel received (event.detail.channel)
+  // - 'channelopen': Fired when data channel opens (event.detail.channel)
+  // - 'message': Fired when data channel message received (event.detail = {channel, data})
+  // - 'channelclose': Fired when data channel closes (event.detail.channel)
+  // - 'connectionstatechange': Fired on connection state change (event.detail.state)
+  // - 'iceconnectionstatechange': Fired on ICE connection state change (event.detail.state)
 }
 
 /**

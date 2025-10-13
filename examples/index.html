@@ -115,7 +115,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>🕊️ PigeonRTC Two-Window Test</h1>
+    <h1><img src="pigeonlogo.jpg" alt="Pigeon" style="height: 48px; vertical-align: middle; margin-right: 10px;">PigeonRTC Two-Window Test</h1>
     <p class="subtitle">Open this page in TWO browser windows/tabs</p>
 
     <div class="info">
@@ -172,7 +172,7 @@
     import { createPigeonRTC } from '../dist/index.mjs';
 
     let rtc = null;
-    let ws = null;
+    let signalingClient = null;
     let myId = null;
     let peerConnection = null;
     let dataChannel = null;
@@ -200,7 +200,7 @@
         rtc = await createPigeonRTC();
         log('✅ PigeonRTC initialized with ' + rtc.getAdapterName(), 'success');
         
-        // Connect to signaling server
+        // Create built-in signaling client
         connectSignaling();
       } catch (err) {
         log(`❌ Error: ${err.message}`, 'error');
@@ -256,15 +256,9 @@
         }
         
         // Trigger client list refresh to enable connect buttons
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          // Hack: send a dummy message to trigger list update
-          setTimeout(() => {
-            const event = new MessageEvent('message', {
-              data: JSON.stringify({ type: 'clients', clients: Array.from(document.querySelectorAll('.client-btn')).map(() => myId) })
-            });
-            // Just manually refresh by re-requesting from server
-            ws.send(JSON.stringify({ type: 'get-clients' }));
-          }, 100);
+        if (signalingClient && signalingClient.isConnected()) {
+          // Built-in signaling will automatically send updates
+          log('Media ready for connections', 'success');
         }
       } catch (err) {
         log(`❌ Error getting media: ${err.message}`, 'error');
@@ -289,51 +283,64 @@
     };
 
     function connectSignaling() {
-      ws = new WebSocket('ws://localhost:9090');
+      // Create built-in signaling client
+      signalingClient = rtc.createSignalingClient('ws://localhost:9090');
       
-      ws.onopen = () => {
+      // Listen for connection events
+      signalingClient.addEventListener('connected', () => {
         log('✅ Connected to signaling server', 'success');
         updateStatus('Connected to signaling server', 'connected');
-      };
+      });
       
-      ws.onmessage = async (event) => {
-        const message = JSON.parse(event.data);
+      signalingClient.addEventListener('disconnected', () => {
+        log('Disconnected from signaling server', 'error');
+        updateStatus('Disconnected', 'disconnected');
+      });
+      
+      signalingClient.addEventListener('error', (event) => {
+        log(`❌ Signaling error: ${event.detail}`, 'error');
+        updateStatus('Signaling server error', 'disconnected');
+      });
+      
+      signalingClient.addEventListener('id', (event) => {
+        myId = event.detail.id;
+        document.getElementById('myId').textContent = myId;
+        log(`My client ID: ${myId}`, 'success');
+      });
+      
+      signalingClient.addEventListener('clients', (event) => {
+        updateClientList(event.detail.clients);
+      });
+      
+      signalingClient.addEventListener('signal', async (event) => {
+        const message = event.detail;
         
-        if (message.type === 'id') {
-          myId = message.id;
-          document.getElementById('myId').textContent = myId;
-          log(`My client ID: ${myId}`, 'success');
-        } else if (message.type === 'clients') {
-          updateClientList(message.clients);
-        } else if (message.type === 'offer') {
+        if (message.type === 'offer') {
           await handleOffer(message);
         } else if (message.type === 'answer') {
           await handleAnswer(message);
         } else if (message.type === 'ice-candidate') {
           await handleIceCandidate(message);
         }
-      };
+      });
       
-      ws.onerror = (err) => {
-        log('❌ Signaling server error', 'error');
-        updateStatus('Signaling server error', 'disconnected');
-      };
-      
-      ws.onclose = () => {
-        log('Disconnected from signaling server', 'error');
-        updateStatus('Disconnected', 'disconnected');
-      };
+      // Connect to server
+      signalingClient.connect().catch(err => {
+        log(`❌ Failed to connect: ${err.message}`, 'error');
+      });
     }
 
     function updateClientList(clients) {
+      // Defensive: ensure clients is an array
+      if (!Array.isArray(clients)) {
+        clients = [];
+      }
       const others = clients.filter(id => id !== myId);
       const listDiv = document.getElementById('clientList');
-      
       if (others.length === 0) {
         listDiv.innerHTML = 'No other clients (open this page in another tab!)';
       } else {
         listDiv.innerHTML = others.map(id => {
-          // Always enable the button now - just warn in the function instead
           return `<button class="client-btn" onclick="window.connectToPeer(${id})">Connect to Client ${id}</button>`;
         }).join('');
       }
@@ -378,11 +385,7 @@
         peerConnection.onicecandidate = (event) => {
           if (event.candidate) {
             log('Sending ICE candidate to peer', 'info');
-            ws.send(JSON.stringify({
-              type: 'ice-candidate',
-              to: peerId,
-              candidate: event.candidate
-            }));
+            signalingClient.sendIceCandidate(peerId, event.candidate);
           } else {
             log('ICE gathering complete', 'info');
           }
@@ -416,11 +419,7 @@
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
         
-        ws.send(JSON.stringify({
-          type: 'offer',
-          to: peerId,
-          offer: offer
-        }));
+        signalingClient.sendOffer(peerId, offer);
         
         log('Sent offer to peer', 'success');
         
@@ -460,11 +459,7 @@
         peerConnection.onicecandidate = (event) => {
           if (event.candidate) {
             log('Sending ICE candidate to peer', 'info');
-            ws.send(JSON.stringify({
-              type: 'ice-candidate',
-              to: message.from,
-              candidate: event.candidate
-            }));
+            signalingClient.sendIceCandidate(message.from, event.candidate);
           } else {
             log('ICE gathering complete', 'info');
           }
@@ -501,11 +496,7 @@
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
         
-        ws.send(JSON.stringify({
-          type: 'answer',
-          to: message.from,
-          answer: answer
-        }));
+        signalingClient.sendAnswer(message.from, answer);
         
         log('Sent answer to peer', 'success');
         

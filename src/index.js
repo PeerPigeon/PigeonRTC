@@ -8,7 +8,7 @@
  * @module pigeonrtc
  */
 
-export { PigeonRTC, createPigeonRTC } from './PigeonRTC.js';
+export { PigeonRTC, createPigeonRTC, SignalingClient, PeerConnection } from './PigeonRTC.js';
 export { RTCAdapter } from './RTCAdapter.js';
 export { BrowserRTCAdapter } from './BrowserRTCAdapter.js';
 export { NodeRTCAdapter } from './NodeRTCAdapter.js';

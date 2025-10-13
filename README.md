@@ -1,12 +1,13 @@
 # PigeonRTC
 
-The WebRTC engine for PeerPigeon - A pluggable, cross-browser compatible WebRTC library.
+The WebRTC engine for PeerPigeon - A pluggable, cross-browser compatible WebRTC library with **built-in WebSocket signaling**.
 
 ## Features
 
 - 🔌 **Pluggable Architecture**: Use different WebRTC implementations through a unified interface
 - 🌐 **Cross-Browser Compatible**: Works in all modern browsers with native WebRTC support
 - 🖥️ **Node.js Support**: Run WebRTC in Node.js using `@koush/wrtc`
+- 📡 **Built-in Signaling**: WebSocket-based signaling client and managed peer connections included
 - 🎯 **TypeScript Support**: Full TypeScript type definitions included
 - 🪶 **Lightweight**: Minimal dependencies and small bundle size
 - 🔧 **Easy to Use**: Simple, intuitive API
@@ -25,7 +26,45 @@ npm install @koush/wrtc
 
 ## Quick Start
 
-### Browser Usage
+### Easy Mode: Built-in Signaling (Recommended)
+
+```javascript
+import { createPigeonRTC } from 'pigeonrtc';
+
+// Initialize PigeonRTC
+const rtc = await createPigeonRTC();
+
+// Get local media
+const localStream = await rtc.getUserMedia({ video: true, audio: true });
+
+// Create signaling client (connects to your WebSocket signaling server)
+const signalingClient = rtc.createSignalingClient('ws://localhost:9090');
+
+// Listen for connection and client list
+signalingClient.addEventListener('connected', () => {
+  console.log('Connected to signaling server');
+});
+
+signalingClient.addEventListener('clients', (event) => {
+  console.log('Available peers:', event.detail.clients);
+});
+
+// Connect to server
+await signalingClient.connect();
+
+// Create managed peer connection (handles signaling automatically!)
+const peerConnection = rtc.createManagedPeerConnection(signalingClient);
+
+// Listen for remote video
+peerConnection.addEventListener('track', (event) => {
+  remoteVideo.srcObject = event.detail.streams[0];
+});
+
+// Connect to a peer (that's it - signaling is handled automatically!)
+await peerConnection.connect(remotePeerId, localStream);
+```
+
+### Advanced: Manual WebRTC (for custom signaling)
 
 ```javascript
 import { createPigeonRTC } from 'pigeonrtc';
@@ -48,6 +87,7 @@ peerConnection.onicecandidate = (event) => {
 };
 
 // Create an offer
+
 const offer = await peerConnection.createOffer();
 await peerConnection.setLocalDescription(offer);
 ```

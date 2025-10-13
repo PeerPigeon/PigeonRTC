@@ -1,5 +1,7 @@
 import { BrowserRTCAdapter } from './BrowserRTCAdapter.js';
 import { NodeRTCAdapter } from './NodeRTCAdapter.js';
+import { SignalingClient } from './SignalingClient.js';
+import { PeerConnection } from './PeerConnection.js';
 
 /**
  * Main PigeonRTC class that provides a unified interface for WebRTC
@@ -184,6 +186,26 @@ export class PigeonRTC {
   getAdapterName() {
     return this.adapter ? this.adapter.getName() : 'None';
   }
+
+  /**
+   * Create a signaling client for peer discovery and connection management
+   * @param {string} serverUrl - WebSocket server URL (e.g., 'ws://localhost:9090')
+   * @returns {SignalingClient}
+   */
+  createSignalingClient(serverUrl) {
+    return new SignalingClient(serverUrl);
+  }
+
+  /**
+   * Create a managed peer connection with built-in signaling
+   * @param {SignalingClient} signalingClient - Signaling client instance
+   * @param {RTCConfiguration} config - RTCPeerConnection configuration
+   * @returns {PeerConnection}
+   */
+  createManagedPeerConnection(signalingClient, config = {}) {
+    this._ensureInitialized();
+    return new PeerConnection(this, signalingClient, config);
+  }
 }
 
 /**
@@ -196,3 +218,7 @@ export async function createPigeonRTC(options = {}) {
   await rtc.initialize(options);
   return rtc;
 }
+
+// Export additional classes
+export { SignalingClient } from './SignalingClient.js';
+export { PeerConnection } from './PeerConnection.js';
