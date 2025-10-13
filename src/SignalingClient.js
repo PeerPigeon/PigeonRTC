@@ -62,23 +62,23 @@ export class SignalingClient extends EventTarget {
    */
   handleMessage(message) {
     switch (message.type) {
-      case 'id':
-        this.clientId = message.id;
-        this.dispatchEvent(new CustomEvent('id', { detail: { id: message.id } }));
-        break;
+    case 'id':
+      this.clientId = message.id;
+      this.dispatchEvent(new CustomEvent('id', { detail: { id: message.id } }));
+      break;
         
-      case 'clients':
-        this.dispatchEvent(new CustomEvent('clients', { detail: { clients: message.clients } }));
-        break;
+    case 'clients':
+      this.dispatchEvent(new CustomEvent('clients', { detail: { clients: message.clients } }));
+      break;
         
-      case 'offer':
-      case 'answer':
-      case 'ice-candidate':
-        this.dispatchEvent(new CustomEvent('signal', { detail: message }));
-        break;
+    case 'offer':
+    case 'answer':
+    case 'ice-candidate':
+      this.dispatchEvent(new CustomEvent('signal', { detail: message }));
+      break;
         
-      default:
-        console.warn('Unknown message type:', message.type);
+    default:
+      console.warn('Unknown message type:', message.type);
     }
   }
 
