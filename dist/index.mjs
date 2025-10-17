@@ -353,6 +353,161 @@ var SignalingClient = class extends EventTarget {
   }
 };
 
+// src/MDNSResolver.js
+var MDNSResolver = class {
+  constructor() {
+    this._resolver = null;
+    this._initialized = false;
+    this._cache = /* @__PURE__ */ new Map();
+    this._cacheTimeout = 6e4;
+  }
+  /**
+   * Initialize the mDNS resolver
+   * @returns {Promise<void>}
+   */
+  async initialize() {
+    if (this._initialized) {
+      return;
+    }
+    try {
+      const pigeonnsModule = await import("pigeonns");
+      this._resolver = pigeonnsModule.default || pigeonnsModule;
+      this._initialized = true;
+    } catch (error) {
+      console.warn("Failed to initialize mDNS resolver:", error.message);
+      this._initialized = false;
+    }
+  }
+  /**
+   * Check if the resolver is available and initialized
+   * @returns {boolean}
+   */
+  isAvailable() {
+    return this._initialized && this._resolver !== null;
+  }
+  /**
+   * Check if an ICE candidate contains a .local hostname
+   * @param {RTCIceCandidateInit} candidate - ICE candidate to check
+   * @returns {boolean}
+   */
+  isLocalCandidate(candidate) {
+    if (!candidate || !candidate.candidate) {
+      return false;
+    }
+    return candidate.candidate.includes(".local");
+  }
+  /**
+   * Extract hostname from ICE candidate string
+   * @param {string} candidateString - ICE candidate string
+   * @returns {string|null} - Extracted hostname or null
+   * @private
+   */
+  _extractHostname(candidateString) {
+    const parts = candidateString.split(" ");
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i].endsWith(".local")) {
+        return parts[i];
+      }
+    }
+    return null;
+  }
+  /**
+   * Get cached IP address for hostname
+   * @param {string} hostname - Hostname to lookup
+   * @returns {string|null}
+   * @private
+   */
+  _getCachedIP(hostname) {
+    const cached = this._cache.get(hostname);
+    if (cached && Date.now() - cached.timestamp < this._cacheTimeout) {
+      return cached.ip;
+    }
+    return null;
+  }
+  /**
+   * Set cached IP address for hostname
+   * @param {string} hostname - Hostname to cache
+   * @param {string} ip - IP address to cache
+   * @private
+   */
+  _setCachedIP(hostname, ip) {
+    this._cache.set(hostname, {
+      ip,
+      timestamp: Date.now()
+    });
+  }
+  /**
+   * Resolve a .local hostname to an IP address using mDNS
+   * @param {string} hostname - Hostname to resolve (e.g., "myhost.local")
+   * @returns {Promise<string|null>} - Resolved IP address or null if resolution fails
+   */
+  async resolve(hostname) {
+    if (!this.isAvailable()) {
+      console.warn("mDNS resolver not available");
+      return null;
+    }
+    const cachedIP = this._getCachedIP(hostname);
+    if (cachedIP) {
+      return cachedIP;
+    }
+    try {
+      const ip = await this._resolver.resolve(hostname);
+      if (ip) {
+        this._setCachedIP(hostname, ip);
+        return ip;
+      }
+      return null;
+    } catch (error) {
+      console.warn(`Failed to resolve ${hostname}:`, error.message);
+      return null;
+    }
+  }
+  /**
+   * Resolve an ICE candidate that contains a .local hostname
+   * Returns a new candidate with the hostname replaced by the IP address
+   * @param {RTCIceCandidateInit} candidate - ICE candidate to resolve
+   * @returns {Promise<RTCIceCandidateInit|null>} - Resolved candidate or null
+   */
+  async resolveCandidate(candidate) {
+    if (!candidate || !candidate.candidate) {
+      return null;
+    }
+    if (!this.isLocalCandidate(candidate)) {
+      return candidate;
+    }
+    const hostname = this._extractHostname(candidate.candidate);
+    if (!hostname) {
+      console.warn("Could not extract hostname from candidate:", candidate.candidate);
+      return null;
+    }
+    const ip = await this.resolve(hostname);
+    if (!ip) {
+      console.warn(`Could not resolve ${hostname} to IP address`);
+      return null;
+    }
+    const resolvedCandidateString = candidate.candidate.replace(hostname, ip);
+    return {
+      ...candidate,
+      candidate: resolvedCandidateString,
+      address: ip
+    };
+  }
+  /**
+   * Clear the resolution cache
+   */
+  clearCache() {
+    this._cache.clear();
+  }
+  /**
+   * Dispose of the resolver and clean up resources
+   */
+  dispose() {
+    this.clearCache();
+    this._resolver = null;
+    this._initialized = false;
+  }
+};
+
 // src/PeerConnection.js
 var PeerConnection = class extends EventTarget {
   constructor(rtcInstance, signalingClient, config = {}) {
@@ -364,16 +519,29 @@ var PeerConnection = class extends EventTarget {
     this.dataChannels = /* @__PURE__ */ new Map();
     this.remoteId = null;
     this.isInitiator = false;
+    this.mdnsResolver = new MDNSResolver();
+    this._mdnsEnabled = config.enableMDNS !== false;
   }
   /**
    * Initialize peer connection
    * @private
    */
-  _init() {
+  async _init() {
+    if (this._mdnsEnabled) {
+      await this.mdnsResolver.initialize();
+    }
     this.pc = this.rtc.createPeerConnection(this.config);
-    this.pc.onicecandidate = (event) => {
+    this.pc.onicecandidate = async (event) => {
       if (event.candidate && this.remoteId) {
-        this.signaling.sendIceCandidate(this.remoteId, event.candidate);
+        let candidateToSend = event.candidate;
+        if (this._mdnsEnabled && this.mdnsResolver.isAvailable() && this.mdnsResolver.isLocalCandidate(event.candidate)) {
+          const resolvedCandidate = await this.mdnsResolver.resolveCandidate(event.candidate);
+          if (resolvedCandidate) {
+            candidateToSend = resolvedCandidate;
+            console.log("Resolved .local ICE candidate:", event.candidate.candidate, "->", resolvedCandidate.candidate);
+          }
+        }
+        this.signaling.sendIceCandidate(this.remoteId, candidateToSend);
       }
     };
     this.pc.onconnectionstatechange = () => {
@@ -414,7 +582,7 @@ var PeerConnection = class extends EventTarget {
   async connect(peerId, localStream = null) {
     this.remoteId = peerId;
     this.isInitiator = true;
-    this._init();
+    await this._init();
     if (localStream) {
       localStream.getTracks().forEach((track) => {
         this.pc.addTrack(track, localStream);
@@ -434,7 +602,7 @@ var PeerConnection = class extends EventTarget {
   async handleOffer(peerId, offer, localStream = null) {
     this.remoteId = peerId;
     this.isInitiator = false;
-    this._init();
+    await this._init();
     if (localStream) {
       localStream.getTracks().forEach((track) => {
         this.pc.addTrack(track, localStream);
@@ -460,7 +628,15 @@ var PeerConnection = class extends EventTarget {
    */
   async handleIceCandidate(candidate) {
     if (this.pc) {
-      await this.pc.addIceCandidate(candidate);
+      let candidateToAdd = candidate;
+      if (this._mdnsEnabled && this.mdnsResolver.isAvailable() && this.mdnsResolver.isLocalCandidate(candidate)) {
+        const resolvedCandidate = await this.mdnsResolver.resolveCandidate(candidate);
+        if (resolvedCandidate) {
+          candidateToAdd = resolvedCandidate;
+          console.log("Resolved incoming .local ICE candidate:", candidate.candidate, "->", resolvedCandidate.candidate);
+        }
+      }
+      await this.pc.addIceCandidate(candidateToAdd);
     }
   }
   /**
@@ -538,6 +714,9 @@ var PeerConnection = class extends EventTarget {
     }
     this.dataChannels.clear();
     this.remoteId = null;
+    if (this.mdnsResolver) {
+      this.mdnsResolver.dispose();
+    }
   }
 };
 
@@ -723,6 +902,7 @@ async function createPigeonRTC(options = {}) {
 var index_default = createPigeonRTC;
 export {
   BrowserRTCAdapter,
+  MDNSResolver,
   NodeRTCAdapter,
   PeerConnection,
   PigeonRTC,

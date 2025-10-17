@@ -214,7 +214,7 @@ export declare class SignalingClient extends EventTarget {
  * Managed peer connection with automatic signaling integration
  */
 export declare class PeerConnection extends EventTarget {
-  constructor(rtc: PigeonRTC, signalingClient: SignalingClient, config?: RTCConfiguration);
+  constructor(rtc: PigeonRTC, signalingClient: SignalingClient, config?: RTCConfiguration & { enableMDNS?: boolean });
   
   /**
    * Initiate connection to a peer (creates and sends offer)
@@ -271,6 +271,48 @@ export declare class PeerConnection extends EventTarget {
   // - 'channelclose': Fired when data channel closes (event.detail.channel)
   // - 'connectionstatechange': Fired on connection state change (event.detail.state)
   // - 'iceconnectionstatechange': Fired on ICE connection state change (event.detail.state)
+}
+
+/**
+ * mDNS Resolver for handling .local ICE candidates
+ */
+export declare class MDNSResolver {
+  constructor();
+  
+  /**
+   * Initialize the mDNS resolver
+   */
+  initialize(): Promise<void>;
+  
+  /**
+   * Check if the resolver is available and initialized
+   */
+  isAvailable(): boolean;
+  
+  /**
+   * Check if an ICE candidate contains a .local hostname
+   */
+  isLocalCandidate(candidate: RTCIceCandidateInit): boolean;
+  
+  /**
+   * Resolve a .local hostname to an IP address using mDNS
+   */
+  resolve(hostname: string): Promise<string | null>;
+  
+  /**
+   * Resolve an ICE candidate that contains a .local hostname
+   */
+  resolveCandidate(candidate: RTCIceCandidateInit): Promise<RTCIceCandidateInit | null>;
+  
+  /**
+   * Clear the resolution cache
+   */
+  clearCache(): void;
+  
+  /**
+   * Dispose of the resolver and clean up resources
+   */
+  dispose(): void;
 }
 
 /**

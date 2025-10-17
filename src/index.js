@@ -12,6 +12,7 @@ export { PigeonRTC, createPigeonRTC, SignalingClient, PeerConnection } from './P
 export { RTCAdapter } from './RTCAdapter.js';
 export { BrowserRTCAdapter } from './BrowserRTCAdapter.js';
 export { NodeRTCAdapter } from './NodeRTCAdapter.js';
+export { MDNSResolver } from './MDNSResolver.js';
 
 // Default export for convenience
 import { createPigeonRTC } from './PigeonRTC.js';

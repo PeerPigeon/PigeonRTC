@@ -1,3 +1,5 @@
+import { MDNSResolver } from './MDNSResolver.js';
+
 /**
  * Managed peer connection with built-in signaling support
  */
@@ -11,19 +13,38 @@ export class PeerConnection extends EventTarget {
     this.dataChannels = new Map();
     this.remoteId = null;
     this.isInitiator = false;
+    this.mdnsResolver = new MDNSResolver();
+    this._mdnsEnabled = config.enableMDNS !== false; // enabled by default
   }
 
   /**
    * Initialize peer connection
    * @private
    */
-  _init() {
+  async _init() {
+    // Initialize mDNS resolver if enabled
+    if (this._mdnsEnabled) {
+      await this.mdnsResolver.initialize();
+    }
+
     this.pc = this.rtc.createPeerConnection(this.config);
     
     // Handle ICE candidates
-    this.pc.onicecandidate = (event) => {
+    this.pc.onicecandidate = async (event) => {
       if (event.candidate && this.remoteId) {
-        this.signaling.sendIceCandidate(this.remoteId, event.candidate);
+        let candidateToSend = event.candidate;
+        
+        // Try to resolve .local candidates if mDNS is enabled
+        if (this._mdnsEnabled && this.mdnsResolver.isAvailable() && 
+            this.mdnsResolver.isLocalCandidate(event.candidate)) {
+          const resolvedCandidate = await this.mdnsResolver.resolveCandidate(event.candidate);
+          if (resolvedCandidate) {
+            candidateToSend = resolvedCandidate;
+            console.log('Resolved .local ICE candidate:', event.candidate.candidate, '->', resolvedCandidate.candidate);
+          }
+        }
+        
+        this.signaling.sendIceCandidate(this.remoteId, candidateToSend);
       }
     };
     
@@ -75,7 +96,7 @@ export class PeerConnection extends EventTarget {
   async connect(peerId, localStream = null) {
     this.remoteId = peerId;
     this.isInitiator = true;
-    this._init();
+    await this._init();
     
     // Add local tracks if provided
     if (localStream) {
@@ -100,7 +121,7 @@ export class PeerConnection extends EventTarget {
   async handleOffer(peerId, offer, localStream = null) {
     this.remoteId = peerId;
     this.isInitiator = false;
-    this._init();
+    await this._init();
     
     // Add local tracks if provided
     if (localStream) {
@@ -132,7 +153,19 @@ export class PeerConnection extends EventTarget {
    */
   async handleIceCandidate(candidate) {
     if (this.pc) {
-      await this.pc.addIceCandidate(candidate);
+      let candidateToAdd = candidate;
+      
+      // Try to resolve .local candidates if mDNS is enabled
+      if (this._mdnsEnabled && this.mdnsResolver.isAvailable() && 
+          this.mdnsResolver.isLocalCandidate(candidate)) {
+        const resolvedCandidate = await this.mdnsResolver.resolveCandidate(candidate);
+        if (resolvedCandidate) {
+          candidateToAdd = resolvedCandidate;
+          console.log('Resolved incoming .local ICE candidate:', candidate.candidate, '->', resolvedCandidate.candidate);
+        }
+      }
+      
+      await this.pc.addIceCandidate(candidateToAdd);
     }
   }
 
@@ -219,5 +252,10 @@ export class PeerConnection extends EventTarget {
     }
     this.dataChannels.clear();
     this.remoteId = null;
+    
+    // Clean up mDNS resolver
+    if (this.mdnsResolver) {
+      this.mdnsResolver.dispose();
+    }
   }
 }

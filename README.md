@@ -8,7 +8,8 @@ The WebRTC engine for PeerPigeon - A pluggable, cross-browser compatible WebRTC 
 - 🌐 **Cross-Browser Compatible**: Works in all modern browsers with native WebRTC support
 - 🖥️ **Node.js Support**: Run WebRTC in Node.js using `@koush/wrtc`
 - 📡 **Built-in Signaling**: WebSocket-based signaling client and managed peer connections included
-- 🎯 **TypeScript Support**: Full TypeScript type definitions included
+- � **mDNS Resolution**: Automatic .local hostname resolution for local network peer discovery
+- �🎯 **TypeScript Support**: Full TypeScript type definitions included
 - 🪶 **Lightweight**: Minimal dependencies and small bundle size
 - 🔧 **Easy to Use**: Simple, intuitive API
 
@@ -107,6 +108,77 @@ const peerConnection = rtc.createPeerConnection({
 
 // ... use peerConnection as normal
 ```
+
+### mDNS Support for .local ICE Candidates
+
+PigeonRTC includes built-in support for resolving `.local` mDNS hostnames in ICE candidates using the `pigeonns` library. This is particularly useful for local network discovery and peer-to-peer connections without a STUN/TURN server.
+
+**Automatic Resolution:**
+
+When using managed peer connections (`createManagedPeerConnection`), mDNS resolution is enabled by default:
+
+```javascript
+import { createPigeonRTC } from 'pigeonrtc';
+
+const rtc = await createPigeonRTC();
+const signalingClient = rtc.createSignalingClient('ws://localhost:9090');
+await signalingClient.connect();
+
+// mDNS resolution is enabled by default
+const peerConnection = rtc.createManagedPeerConnection(signalingClient);
+
+// .local ICE candidates are automatically resolved to IP addresses
+await peerConnection.connect(remotePeerId);
+```
+
+**Disable mDNS Resolution:**
+
+You can disable mDNS resolution if needed:
+
+```javascript
+// Disable mDNS resolution
+const peerConnection = rtc.createManagedPeerConnection(signalingClient, {
+  enableMDNS: false,
+  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+});
+```
+
+**Manual mDNS Resolution:**
+
+For advanced use cases, you can use the `MDNSResolver` directly:
+
+```javascript
+import { MDNSResolver } from 'pigeonrtc';
+
+const resolver = new MDNSResolver();
+await resolver.initialize();
+
+// Check if a candidate contains .local
+if (resolver.isLocalCandidate(candidate)) {
+  // Resolve the candidate
+  const resolvedCandidate = await resolver.resolveCandidate(candidate);
+  if (resolvedCandidate) {
+    console.log('Resolved:', resolvedCandidate);
+  }
+}
+
+// Resolve a hostname directly
+const ip = await resolver.resolve('myhost.local');
+console.log('IP address:', ip);
+
+// Clean up
+resolver.dispose();
+```
+
+**How it works:**
+
+1. When an ICE candidate containing a `.local` hostname is generated or received
+2. The `MDNSResolver` automatically detects it
+3. Uses `pigeonns` to perform mDNS lookup on the local network
+4. Replaces the `.local` hostname with the resolved IP address
+5. The resolved candidate is sent/used for the peer connection
+
+This enables seamless local network peer discovery without manual configuration!
 
 ### Using Custom Adapters
 

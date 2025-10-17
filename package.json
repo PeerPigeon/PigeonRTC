@@ -42,7 +42,11 @@
     "datachannel",
     "media-stream",
     "adapter",
-    "pluggable"
+    "pluggable",
+    "mdns",
+    "local",
+    "discovery",
+    "zeroconf"
   ],
   "author": "PeerPigeon",
   "license": "MIT",
@@ -57,6 +61,9 @@
     "@koush/wrtc": {
       "optional": true
     }
+  },
+  "optionalDependencies": {
+    "pigeonns": "^1.0.1"
   },
   "devDependencies": {
     "esbuild": "^0.25.8",

@@ -6,7 +6,7 @@ const sharedConfig = {
   bundle: true,
   platform: 'neutral',
   target: ['es2020'],
-  external: ['@koush/wrtc'], // Keep as external since it's a peer dependency
+  external: ['@koush/wrtc', 'pigeonns'], // Keep as external since they're peer/optional dependencies
 };
 
 async function build() {
