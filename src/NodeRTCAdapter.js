@@ -18,8 +18,9 @@ export class NodeRTCAdapter extends RTCAdapter {
 
     try {
       // Dynamically import @koush/wrtc (it's an optional peer dependency)
-      const wrtc = await import('@koush/wrtc');
-      this._wrtc = wrtc;
+      const wrtcModule = await import('@koush/wrtc');
+      // Handle both default export (ES modules) and named exports (CommonJS)
+      this._wrtc = wrtcModule.default || wrtcModule;
       this._initialized = true;
     } catch (error) {
       throw new Error(

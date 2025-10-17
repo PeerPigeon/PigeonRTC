@@ -148,8 +148,8 @@ var NodeRTCAdapter = class extends RTCAdapter {
       return;
     }
     try {
-      const wrtc = await import("@koush/wrtc");
-      this._wrtc = wrtc;
+      const wrtcModule = await import("@koush/wrtc");
+      this._wrtc = wrtcModule.default || wrtcModule;
       this._initialized = true;
     } catch (error) {
       throw new Error(
