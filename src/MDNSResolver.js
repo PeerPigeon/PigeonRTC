@@ -1,17 +1,21 @@
 /**
  * mDNS Resolver for handling .local ICE candidates
  * Uses pigeonns for resolving mDNS hostnames to IP addresses
+ * Supports both Node.js (direct mDNS) and Browser (HTTP API) environments
  */
 export class MDNSResolver {
-  constructor() {
+  constructor(options = {}) {
     this._resolver = null;
     this._initialized = false;
     this._cache = new Map();
     this._cacheTimeout = 60000; // 60 seconds cache TTL
+    this._mode = null; // 'node' or 'browser'
+    this._serverUrl = options.serverUrl || 'http://localhost:5380'; // pigeonns HTTP server
   }
 
   /**
    * Initialize the mDNS resolver
+   * Automatically detects Node.js vs Browser environment
    * @returns {Promise<void>}
    */
   async initialize() {
@@ -19,15 +23,51 @@ export class MDNSResolver {
       return;
     }
 
-    try {
-      // Dynamically import pigeonns
-      const pigeonnsModule = await import('pigeonns');
-      this._resolver = pigeonnsModule.default || pigeonnsModule;
-      this._initialized = true;
-    } catch (error) {
-      console.warn('Failed to initialize mDNS resolver:', error.message);
-      // Don't throw - allow fallback to non-mDNS operation
-      this._initialized = false;
+    // Detect environment
+    const isNode = typeof process !== 'undefined' && 
+                   process.versions != null && 
+                   process.versions.node != null;
+
+    if (isNode) {
+      // Node.js: Use direct mDNS resolver
+      try {
+        const pigeonnsModule = await import('pigeonns');
+        const MDNSResolver = pigeonnsModule.default || pigeonnsModule;
+        this._resolver = new MDNSResolver({
+          timeout: 5000,
+          ttl: 60, // Match our cache timeout
+          cacheSize: 1000
+        });
+        this._resolver.start();
+        this._mode = 'node';
+        this._initialized = true;
+        console.log('✓ mDNS resolver initialized (Node.js mode)');
+      } catch (error) {
+        console.warn('Failed to initialize Node.js mDNS resolver:', error.message);
+        this._initialized = false;
+      }
+    } else {
+      // Browser: Use HTTP API client
+      try {
+        // Test if pigeonns server is available
+        const response = await fetch(`${this._serverUrl}/health`, {
+          method: 'GET',
+          signal: AbortSignal.timeout(2000) // 2 second timeout
+        });
+        
+        if (response.ok) {
+          this._mode = 'browser';
+          this._initialized = true;
+          console.log(`✓ mDNS resolver initialized (Browser mode) - Server: ${this._serverUrl}`);
+        } else {
+          console.warn(`pigeonns server not responding at ${this._serverUrl}`);
+          this._initialized = false;
+        }
+      } catch (error) {
+        console.warn(`Failed to connect to pigeonns server at ${this._serverUrl}:`, error.message);
+        console.warn('mDNS resolution will be disabled. Start pigeonns server with: npx pigeonns serve');
+        this._initialized = false;
+      }
     }
   }
 
@@ -102,6 +142,7 @@ export class MDNSResolver {
 
   /**
    * Resolve a .local hostname to an IP address using mDNS
+   * Works in both Node.js (direct mDNS) and Browser (HTTP API) modes
    * @param {string} hostname - Hostname to resolve (e.g., "myhost.local")
    * @returns {Promise<string|null>} - Resolved IP address or null if resolution fails
    */
@@ -118,8 +159,28 @@ export class MDNSResolver {
     }
 
     try {
-      // Use pigeonns to resolve the hostname
-      const ip = await this._resolver.resolve(hostname);
+      let ip = null;
+
+      if (this._mode === 'node') {
+        // Node.js: Use direct mDNS resolver
+        ip = await this._resolver.resolve(hostname, 'A');
+      } else if (this._mode === 'browser') {
+        // Browser: Use HTTP API
+        const response = await fetch(
+          `${this._serverUrl}/resolve?name=${encodeURIComponent(hostname)}&type=A`,
+          {
+            method: 'GET',
+            signal: AbortSignal.timeout(5000) // 5 second timeout
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          ip = data.address;
+        } else {
+          console.warn(`Failed to resolve ${hostname}: HTTP ${response.status}`);
+        }
+      }
       
       if (ip) {
         this._setCachedIP(hostname, ip);
@@ -183,7 +244,18 @@ export class MDNSResolver {
    */
   dispose() {
     this.clearCache();
+    
+    // Clean up Node.js resolver if running
+    if (this._mode === 'node' && this._resolver) {
+      try {
+        this._resolver.stop();
+      } catch (error) {
+        console.warn('Error stopping mDNS resolver:', error.message);
+      }
+    }
+    
     this._resolver = null;
     this._initialized = false;
+    this._mode = null;
   }
 }

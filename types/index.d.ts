@@ -214,7 +214,10 @@ export declare class SignalingClient extends EventTarget {
  * Managed peer connection with automatic signaling integration
  */
 export declare class PeerConnection extends EventTarget {
-  constructor(rtc: PigeonRTC, signalingClient: SignalingClient, config?: RTCConfiguration & { enableMDNS?: boolean });
+  constructor(rtc: PigeonRTC, signalingClient: SignalingClient, config?: RTCConfiguration & { 
+    enableMDNS?: boolean;
+    mdnsServerUrl?: string; // URL for pigeonns HTTP server (default: 'http://localhost:5380')
+  });
   
   /**
    * Initiate connection to a peer (creates and sends offer)
@@ -277,7 +280,9 @@ export declare class PeerConnection extends EventTarget {
  * mDNS Resolver for handling .local ICE candidates
  */
 export declare class MDNSResolver {
-  constructor();
+  constructor(options?: {
+    serverUrl?: string; // HTTP server URL for browser mode (default: 'http://localhost:5380')
+  });
   
   /**
    * Initialize the mDNS resolver

@@ -111,7 +111,32 @@ const peerConnection = rtc.createPeerConnection({
 
 ### mDNS Support for .local ICE Candidates
 
-PigeonRTC includes built-in support for resolving `.local` mDNS hostnames in ICE candidates using the `pigeonns` library. This is particularly useful for local network discovery and peer-to-peer connections without a STUN/TURN server.
+PigeonRTC includes built-in support for resolving `.local` mDNS hostnames in ICE candidates using the `pigeonns` library. This works **cross-platform** in both Node.js and browsers for local network peer discovery.
+
+**How it Works:**
+
+- **Node.js**: Direct mDNS resolution using multicast DNS
+- **Browsers**: HTTP API client connecting to a local `pigeonns` server
+
+**Setup for Browsers:**
+
+First, start the pigeonns HTTP server (in a separate terminal):
+
+```bash
+npx pigeonns serve
+# Server starts at http://localhost:5380
+```
+
+Or programmatically in Node.js:
+
+```javascript
+const MDNSResolver = require('pigeonns');
+const resolver = new MDNSResolver({ 
+  server: true,
+  serverPort: 5380 
+});
+resolver.start();
+```
 
 **Automatic Resolution:**
 
@@ -129,6 +154,17 @@ const peerConnection = rtc.createManagedPeerConnection(signalingClient);
 
 // .local ICE candidates are automatically resolved to IP addresses
 await peerConnection.connect(remotePeerId);
+```
+
+**Custom Server URL:**
+
+If your pigeonns server runs on a different port or host:
+
+```javascript
+const peerConnection = rtc.createManagedPeerConnection(signalingClient, {
+  mdnsServerUrl: 'http://localhost:8080',
+  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+});
 ```
 
 **Disable mDNS Resolution:**

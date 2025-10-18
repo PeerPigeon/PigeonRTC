@@ -405,27 +405,62 @@ var PigeonRTC = (() => {
 
   // src/MDNSResolver.js
   var MDNSResolver = class {
-    constructor() {
+    constructor(options = {}) {
       this._resolver = null;
       this._initialized = false;
       this._cache = /* @__PURE__ */ new Map();
       this._cacheTimeout = 6e4;
+      this._mode = null;
+      this._serverUrl = options.serverUrl || "http://localhost:5380";
     }
     /**
      * Initialize the mDNS resolver
+     * Automatically detects Node.js vs Browser environment
      * @returns {Promise<void>}
      */
     async initialize() {
       if (this._initialized) {
         return;
       }
-      try {
-        const pigeonnsModule = await import("pigeonns");
-        this._resolver = pigeonnsModule.default || pigeonnsModule;
-        this._initialized = true;
-      } catch (error) {
-        console.warn("Failed to initialize mDNS resolver:", error.message);
-        this._initialized = false;
+      const isNode = typeof process !== "undefined" && process.versions != null && process.versions.node != null;
+      if (isNode) {
+        try {
+          const pigeonnsModule = await import("pigeonns");
+          const MDNSResolver2 = pigeonnsModule.default || pigeonnsModule;
+          this._resolver = new MDNSResolver2({
+            timeout: 5e3,
+            ttl: 60,
+            // Match our cache timeout
+            cacheSize: 1e3
+          });
+          this._resolver.start();
+          this._mode = "node";
+          this._initialized = true;
+          console.log("\u2713 mDNS resolver initialized (Node.js mode)");
+        } catch (error) {
+          console.warn("Failed to initialize Node.js mDNS resolver:", error.message);
+          this._initialized = false;
+        }
+      } else {
+        try {
+          const response = await fetch(`${this._serverUrl}/health`, {
+            method: "GET",
+            signal: AbortSignal.timeout(2e3)
+            // 2 second timeout
+          });
+          if (response.ok) {
+            this._mode = "browser";
+            this._initialized = true;
+            console.log(`\u2713 mDNS resolver initialized (Browser mode) - Server: ${this._serverUrl}`);
+          } else {
+            console.warn(`pigeonns server not responding at ${this._serverUrl}`);
+            this._initialized = false;
+          }
+        } catch (error) {
+          console.warn(`Failed to connect to pigeonns server at ${this._serverUrl}:`, error.message);
+          console.warn("mDNS resolution will be disabled. Start pigeonns server with: npx pigeonns serve");
+          this._initialized = false;
+        }
       }
     }
     /**
@@ -488,6 +523,7 @@ var PigeonRTC = (() => {
     }
     /**
      * Resolve a .local hostname to an IP address using mDNS
+     * Works in both Node.js (direct mDNS) and Browser (HTTP API) modes
      * @param {string} hostname - Hostname to resolve (e.g., "myhost.local")
      * @returns {Promise<string|null>} - Resolved IP address or null if resolution fails
      */
@@ -501,7 +537,25 @@ var PigeonRTC = (() => {
         return cachedIP;
       }
       try {
-        const ip = await this._resolver.resolve(hostname);
+        let ip = null;
+        if (this._mode === "node") {
+          ip = await this._resolver.resolve(hostname, "A");
+        } else if (this._mode === "browser") {
+          const response = await fetch(
+            `${this._serverUrl}/resolve?name=${encodeURIComponent(hostname)}&type=A`,
+            {
+              method: "GET",
+              signal: AbortSignal.timeout(5e3)
+              // 5 second timeout
+            }
+          );
+          if (response.ok) {
+            const data = await response.json();
+            ip = data.address;
+          } else {
+            console.warn(`Failed to resolve ${hostname}: HTTP ${response.status}`);
+          }
+        }
         if (ip) {
           this._setCachedIP(hostname, ip);
           return ip;
@@ -553,8 +607,16 @@ var PigeonRTC = (() => {
      */
     dispose() {
       this.clearCache();
+      if (this._mode === "node" && this._resolver) {
+        try {
+          this._resolver.stop();
+        } catch (error) {
+          console.warn("Error stopping mDNS resolver:", error.message);
+        }
+      }
       this._resolver = null;
       this._initialized = false;
+      this._mode = null;
     }
   };
 
@@ -569,7 +631,9 @@ var PigeonRTC = (() => {
       this.dataChannels = /* @__PURE__ */ new Map();
       this.remoteId = null;
       this.isInitiator = false;
-      this.mdnsResolver = new MDNSResolver();
+      this.mdnsResolver = new MDNSResolver({
+        serverUrl: config.mdnsServerUrl || "http://localhost:5380"
+      });
       this._mdnsEnabled = config.enableMDNS !== false;
     }
     /**

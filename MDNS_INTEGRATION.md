@@ -2,7 +2,53 @@
 
 ## Overview
 
-PigeonRTC now includes integrated support for resolving `.local` mDNS hostnames in WebRTC ICE candidates using the `pigeonns` npm package. This enables automatic local network peer discovery without requiring external STUN/TURN servers.
+PigeonRTC now includes integrated support for resolving `.local` mDNS hostnames in WebRTC ICE candidates using the `pigeonns` npm package. This enables automatic local network peer discovery **cross-platform** in both Node.js and browser environments.
+
+## Cross-Platform Support
+
+### Node.js Mode
+- Uses direct mDNS multicast queries
+- No external server required
+- Fully automatic
+
+### Browser Mode (NEW in v1.0.2+)
+- Uses HTTP API to connect to a local `pigeonns` server
+- Server can run separately or be embedded in your Node.js application
+- Works in Chrome, Firefox, Safari, Edge - all modern browsers!
+
+## How It Works
+
+### Node.js Direct Resolution
+```
+Browser generates: abc123.local
+↓
+PigeonRTC detects .local candidate
+↓
+MDNSResolver (Node.js mode)
+↓
+Direct mDNS multicast query
+↓
+Receives response: 192.168.1.100
+↓
+Candidate updated with IP
+```
+
+### Browser HTTP Resolution
+```
+Browser generates: abc123.local
+↓
+PigeonRTC detects .local candidate
+↓
+MDNSResolver (Browser mode)
+↓
+HTTP GET to http://localhost:5380/resolve?name=abc123.local
+↓
+pigeonns server queries local network via mDNS
+↓
+Returns JSON: {address: "192.168.1.100"}
+↓
+Candidate updated with IP
+```
 
 ## Changes Made
 

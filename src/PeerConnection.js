@@ -13,7 +13,9 @@ export class PeerConnection extends EventTarget {
     this.dataChannels = new Map();
     this.remoteId = null;
     this.isInitiator = false;
-    this.mdnsResolver = new MDNSResolver();
+    this.mdnsResolver = new MDNSResolver({
+      serverUrl: config.mdnsServerUrl || 'http://localhost:5380'
+    });
     this._mdnsEnabled = config.enableMDNS !== false; // enabled by default
   }
 

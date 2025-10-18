@@ -1,6 +1,6 @@
 {
   "name": "pigeonrtc",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Pluggable cross-browser compatible WebRTC library for PeerPigeon",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -63,7 +63,7 @@
     }
   },
   "optionalDependencies": {
-    "pigeonns": "^1.0.1"
+    "pigeonns": "^1.0.2"
   },
   "devDependencies": {
     "esbuild": "^0.25.8",

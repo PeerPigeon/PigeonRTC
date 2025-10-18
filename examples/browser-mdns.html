@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PigeonRTC - Browser mDNS Example</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        .status {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .status.info {
+            background: #E3F2FD;
+            color: #1976D2;
+            border-left: 4px solid #2196F3;
+        }
+        .status.success {
+            background: #E8F5E9;
+            color: #388E3C;
+            border-left: 4px solid #4CAF50;
+        }
+        .status.error {
+            background: #FFEBEE;
+            color: #C62828;
+            border-left: 4px solid #F44336;
+        }
+        .status.warning {
+            background: #FFF3E0;
+            color: #E65100;
+            border-left: 4px solid #FF9800;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        input {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            width: 300px;
+        }
+        .log {
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 4px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+        }
+        .log-entry.error {
+            color: #c62828;
+        }
+        .log-entry.success {
+            color: #388E3C;
+        }
+        code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🐦 PigeonRTC - Browser mDNS Resolution</h1>
+        
+        <div id="serverStatus" class="status info">
+            ⏳ Checking pigeonns server...
+        </div>
+
+        <div style="margin: 20px 0;">
+            <h3>Test mDNS Resolution</h3>
+            <input type="text" id="hostname" placeholder="Enter hostname (e.g., abc123.local)" value="">
+            <button id="resolveBtn" onclick="testResolve()">Resolve Hostname</button>
+        </div>
+
+        <div style="margin: 20px 0;">
+            <h3>Instructions</h3>
+            <ol>
+                <li>Start the pigeonns server in a terminal:
+                    <pre style="background:#f4f4f4; padding:10px; border-radius:4px;"><code>npx pigeonns serve</code></pre>
+                </li>
+                <li>Enter a <code>.local</code> hostname above (from WebRTC ICE candidates)</li>
+                <li>Click "Resolve Hostname" to resolve it to an IP address</li>
+            </ol>
+        </div>
+
+        <div style="margin: 20px 0;">
+            <h3>Log</h3>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <!-- Include PigeonRTC from CDN or local build -->
+    <script type="module">
+        import { MDNSResolver } from '../dist/index.mjs';
+
+        let resolver = null;
+        const log = document.getElementById('log');
+        const statusDiv = document.getElementById('serverStatus');
+
+        function addLog(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        async function initResolver() {
+            try {
+                addLog('Initializing mDNS resolver...');
+                resolver = new MDNSResolver({
+                    serverUrl: 'http://localhost:5380'
+                });
+                
+                await resolver.initialize();
+                
+                if (resolver.isAvailable()) {
+                    statusDiv.className = 'status success';
+                    statusDiv.innerHTML = '✅ Connected to pigeonns server at http://localhost:5380';
+                    addLog('mDNS resolver ready!', 'success');
+                    document.getElementById('resolveBtn').disabled = false;
+                } else {
+                    throw new Error('Resolver not available');
+                }
+            } catch (error) {
+                statusDiv.className = 'status error';
+                statusDiv.innerHTML = `❌ Failed to connect to pigeonns server<br>
+                    <small>Make sure to start it with: <code>npx pigeonns serve</code></small>`;
+                addLog(`Error: ${error.message}`, 'error');
+                document.getElementById('resolveBtn').disabled = true;
+            }
+        }
+
+        window.testResolve = async function() {
+            const hostname = document.getElementById('hostname').value.trim();
+            
+            if (!hostname) {
+                addLog('Please enter a hostname', 'error');
+                return;
+            }
+
+            if (!hostname.endsWith('.local')) {
+                addLog('Warning: Hostname should end with .local', 'error');
+                return;
+            }
+
+            try {
+                addLog(`Resolving ${hostname}...`);
+                const ip = await resolver.resolve(hostname);
+                
+                if (ip) {
+                    addLog(`✓ Resolved: ${hostname} → ${ip}`, 'success');
+                } else {
+                    addLog(`✗ Could not resolve ${hostname}`, 'error');
+                    addLog('The host might not be on the network or not responding to mDNS queries', 'error');
+                }
+            } catch (error) {
+                addLog(`Error resolving ${hostname}: ${error.message}`, 'error');
+            }
+        };
+
+        // Example: Simulating ICE candidate with .local
+        window.testICECandidate = async function() {
+            const exampleCandidate = {
+                candidate: 'candidate:1 1 udp 2113937151 abc123.local 54321 typ host',
+                sdpMid: '0',
+                sdpMLineIndex: 0
+            };
+
+            addLog('Testing ICE candidate resolution...');
+            addLog(`Input: ${exampleCandidate.candidate}`);
+
+            if (resolver.isLocalCandidate(exampleCandidate)) {
+                addLog('✓ Candidate contains .local hostname', 'success');
+                
+                const resolved = await resolver.resolveCandidate(exampleCandidate);
+                if (resolved) {
+                    addLog(`✓ Resolved candidate: ${resolved.candidate}`, 'success');
+                } else {
+                    addLog('✗ Could not resolve candidate', 'error');
+                }
+            }
+        };
+
+        // Initialize on page load
+        initResolver();
+
+        // Add test button
+        setTimeout(() => {
+            const testBtn = document.createElement('button');
+            testBtn.textContent = 'Test with Example ICE Candidate';
+            testBtn.onclick = testICECandidate;
+            testBtn.style.background = '#2196F3';
+            document.querySelector('div[style*="margin: 20px 0;"]').appendChild(testBtn);
+        }, 100);
+    </script>
+</body>
+</html>
